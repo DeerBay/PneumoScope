@@ -4,8 +4,8 @@
 - [ ] Create a GitHub repository with a clear name and description.
 - [ ] Set up a virtual environment (e.g., `venv` or `conda`).
 - [ ] Create a `README.md` file with an initial project description.
-- [ ] Add a `.gitignore` file (include common Python files and dataset folders).
-- [ ] List project dependencies in `requirements.txt`.
+- [ ] Add a `.gitignore` file (include common Python files).
+- [ ] List project dependencies in (e.g `requirements.txt`).
 
 ## **2. Data Preparation**
 - [ ] Download the dataset from Kaggle.
@@ -44,7 +44,7 @@
 - [ ] Use Grad-CAM or similar techniques to interpret model predictions.
 
 ## **7. Deployment (Optional)**
-- [ ] Convert the trained model to a format suitable for deployment (e.g., TensorFlow Lite, ONNX).
+- [ ] Convert the trained model to a format suitable for deployment (e.g., PyTorch, ONNX).
 - [ ] Create a simple web app using Flask or Streamlit for real-time prediction.
 - [ ] Test the web app with sample X-ray images.
 
@@ -55,9 +55,9 @@
   - [ ] How to run the model
   - [ ] Results and performance metrics
 - [ ] Add comments to the code for clarity.
-- [ ] Write a brief project report (if required by your course).
+- [ ] Write a brief project report (as required by our course).
 
 ## **9. Final Steps**
 - [ ] Review and clean the code.
 - [ ] Commit all changes and push to GitHub.
-- [ ] Share the project link with your course instructors or peers.
+- [ ] Share the project link with your course instructor.
