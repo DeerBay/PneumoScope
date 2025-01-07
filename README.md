@@ -33,4 +33,3 @@ PneumoScope/
 ├── README.md              # Project description and instructions
 ├── .gitignore             # Ignored files/folders
 └── LICENSE                # License for the project
-
