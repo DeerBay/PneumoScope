@@ -1,15 +1,15 @@
 # **To-Do List: Pneumonia Detection and Classification Project**
 
 ## **1. Project Setup**
-- [ ] Create a GitHub repository with a clear name and description.
+- [X] Create a GitHub repository with a clear name and description.
 - [ ] Set up a virtual environment (e.g., `venv` or `conda`).
 - [ ] Create a `README.md` file with an initial project description.
-- [ ] Add a `.gitignore` file (include common Python files).
+- [X] Add a `.gitignore` file (include common Python files).
 - [ ] List project dependencies in (e.g `requirements.txt`).
 
 ## **2. Data Preparation**
 - [ ] Download the dataset from Kaggle.
-- [ ] Organize the dataset into appropriate directories (`train`, `test`, `val`).
+- [X] Organize the dataset into appropriate directories (`train`, `test`, `val`).
 - [ ] Explore the dataset (e.g., check for class imbalance, image size).
 - [ ] Perform data preprocessing:
   - [ ] Resize images to a uniform size.
