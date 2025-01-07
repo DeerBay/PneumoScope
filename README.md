@@ -2,7 +2,7 @@
 Detecting and classifying pneumonia (bacterial vs viral) on chest X-ray images.
 
 # Project Folder Structure
-
+```
 PneumoScope/
 │
 ├── data/                  # Folder for datasets
@@ -33,3 +33,4 @@ PneumoScope/
 ├── README.md              # Project description and instructions
 ├── .gitignore             # Ignored files/folders
 └── LICENSE                # License for the project
+```
