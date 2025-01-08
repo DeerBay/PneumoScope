@@ -4,20 +4,20 @@
 - [X] Create a GitHub repository with a clear name and description.
 - [ ] Set up a virtual environment (e.g., `venv` or `conda`).
 - [ ] Create a `README.md` file with an initial project description.
-- [X] Add a `.gitignore` file (include common Python files).
+- [X] Add a `.gitignore` file (include common Python files, data).
 - [ ] List project dependencies in (e.g `requirements.txt`).
 
 ## **2. Data Preparation**
-- [ ] Download the dataset from Kaggle.
+- [ ] Download the dataset from Kaggle. # Sebbe data_loader.py
 - [X] Organize the dataset into appropriate directories (`train`, `test`, `val`).
-- [ ] Explore the dataset (e.g., check for class imbalance, image size).
-- [ ] Perform data preprocessing:
+- [ ] Explore the dataset (e.g., check for class imbalance, image size). # Julia data_exploration.ipynb
+- [ ] Perform data preprocessing: 
   - [ ] Resize images to a uniform size.
   - [ ] Normalize image pixel values.
   - [ ] Apply data augmentation (e.g., flipping, rotation, zoom).
 
 ## **3. Model Development**
-- [ ] Choose baseline CNN architecture (e.g., simple CNN).
+- [ ] Choose baseline CNN architecture (e.g., simple CNN). # Ali
 - [ ] Train a binary classification model (pneumonia vs. no pneumonia).
 - [ ] Train a ternary classification model (bacterial vs. viral vs. no pneumonia).
 - [ ] Experiment with pre-trained models (e.g., ResNet, VGG, Inception).
