@@ -6,7 +6,14 @@ __pycache__/
 # C extensions
 *.so
 
+# Ignore the entire data folder
+data/
+
 # Distribution / packaging
+uv.lock
+hello.py
+.python-version
+pyproject.toml
 .Python
 build/
 develop-eggs/
