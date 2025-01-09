@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 
 from torch import nn
 from sklearn.metrics import confusion_matrix, precision_score, recall_score, f1_score
-from src.data_loader import get_data_loaders
-from src.model import PneumoNet
+from data_loader import get_data_loaders
+from model import PneumoNet
 
 def evaluate_model(model_path, data_dir, batch_size=128, plot_cm=False):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -69,3 +69,8 @@ def evaluate_model(model_path, data_dir, batch_size=128, plot_cm=False):
         plt.show()
 
     return precision, recall, f1
+
+if __name__ == "__main__":
+    model_path = "../saved_models/binary_save/best_model.pth"
+    data_dir = "../data/2/chest_xray"  # Update this to the correct dataset path
+    evaluate_model(model_path, data_dir, batch_size=128, plot_cm=True)
