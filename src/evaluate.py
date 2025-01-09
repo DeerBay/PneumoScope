@@ -7,7 +7,7 @@ from sklearn.metrics import confusion_matrix, precision_score, recall_score, f1_
 from src.data_loader import get_data_loaders
 from src.model import PneumoNet
 
-def evaluate_model(model_path, data_dir, batch_size=32, plot_cm=False):
+def evaluate_model(model_path, data_dir, batch_size=128, plot_cm=False):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Retrieve the test_loader
