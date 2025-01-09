@@ -10,14 +10,14 @@
 ## **2. Data Preparation**
 - [X] Download the dataset from Kaggle. # Sebbe data_loader.py
 - [X] Organize the dataset into appropriate directories (`train`, `test`, `val`).
-- [ ] Explore the dataset (e.g., check for class imbalance, image size). # Julia data_exploration.ipynb
+- [X] Explore the dataset (e.g., check for class imbalance, image size). # Julia data_exploration.ipynb
 - [ ] Perform data preprocessing: 
   - [ ] Resize images to a uniform size.
   - [ ] Normalize image pixel values.
   - [ ] Apply data augmentation (e.g., flipping, rotation, zoom).
 
 ## **3. Model Development**
-- [ ] Choose baseline CNN architecture (e.g., simple CNN). # Ali
+- [X] Choose baseline CNN architecture (e.g., simple CNN). # Ali
 - [ ] Train a binary classification model (pneumonia vs. no pneumonia).
 - [ ] Train a ternary classification model (bacterial vs. viral vs. no pneumonia).
 - [ ] Experiment with pre-trained models (e.g., ResNet, VGG, Inception).
