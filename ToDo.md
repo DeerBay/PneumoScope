@@ -50,12 +50,12 @@
 
 ## **8. Documentation** # Younis
 - [ ] Update the `README.md` file with detailed instructions on:
-  - [ ] Project overview
-  - [ ] How to set up the environment
-  - [ ] How to run the model
-  - [ ] Results and performance metrics
+  - [X] Project overview
+  - [X] How to set up the environment
+  - [X] How to run the model
+  - [ ] Results and performance metrics # Will add more as we discuss more/ Younis
 - [ ] Add comments to the code for clarity.
-- [ ] Write a brief project report (as required by our course).
+- [ ] Write a brief project report (as required by our course). # Brief overview added/Younis
 
 ## **9. Final Steps**
 - [ ] Review and clean the code.
