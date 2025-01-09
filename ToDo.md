@@ -20,7 +20,7 @@
 - [X] Choose baseline CNN architecture (e.g., simple CNN). # Ali
 - [ ] Train a binary classification model (pneumonia vs. no pneumonia).
 - [ ] Train a ternary classification model (bacterial vs. viral vs. no pneumonia).
-- [ ] Experiment with pre-trained models (e.g., ResNet, VGG, Inception).
+- [-] Experiment with pre-trained models (e.g., ResNet, VGG, Inception).
 - [ ] Implement transfer learning if using pre-trained models.
 
 ## **4. Model Evaluation**
@@ -60,4 +60,4 @@
 ## **9. Final Steps**
 - [ ] Review and clean the code.
 - [ ] Commit all changes and push to GitHub.
-- [ ] Share the project link with your course instructor.
+- [ ] Share the project link with our course instructor.
