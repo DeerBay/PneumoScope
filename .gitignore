@@ -186,3 +186,4 @@ torchtest.py
 # Data folder
 data/
 
+poetry.lock
