@@ -15,6 +15,10 @@ from src.model import PneumoNet
 
 from sklearn.metrics import accuracy_score
 
+import datetime
+
+timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+
 def print_gpu_stats():
     if torch.cuda.is_available():
         print(f"\nGPU Memory Usage:")
@@ -115,7 +119,7 @@ def train_model(
         val_acc = accuracy_score(all_val_labels, all_val_preds)  # 0-1 binary
 
         epoch_time = time.time() - start_time
-
+ 
         # Print stats
         print(f"\nEpoch {epoch+1}/{epochs} | "
               f"Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | Val Acc: {val_acc:.4f}")
@@ -131,16 +135,16 @@ def train_model(
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             no_improvement_count = 0
-            torch.save(model.state_dict(), "saved_models/best_model.pth")
-            print(f"  [!] Best model saved at epoch {epoch+1}")
+            torch.save(model.state_dict(), f"saved_models/best_model_{timestamp}.pth")
+            print(f"  [!] Best model saved at epoch {epoch+1}, {timestamp}")
         else:
             no_improvement_count += 1
             if no_improvement_count >= patience:
-                print(f"Early stopping triggered at epoch {epoch+1} (no improvement in {patience} epochs).")
+                print(f"Early stopping triggered at epoch {epoch+1} (no improvement in {patience} epochs), {timestamp}.")
                 break
 
     # Save final model
-    torch.save(model.state_dict(), "saved_models/final_model.pth")
-    print("Training complete. Final model saved as 'final_model.pth'.")
+    torch.save(model.state_dict(), f"saved_models/final_model_{timestamp}.pth")
+    print(f"Training complete {timestamp}. Final model saved as 'final_model.pth'.")
 
     return model, history
