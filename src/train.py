@@ -46,7 +46,8 @@ def train_model(
     # Get DataLoaders (example: augmentation on, random_crop off, color jitter off)
     train_loader, val_loader, _ = get_data_loaders(
         data_dir, batch_size=batch_size, augment_train=True,
-        random_crop=False, color_jitter=False, num_workers=4  # Increased from 2 to 4
+        random_crop=False, color_jitter=False, num_workers=4  # Increased from 2 to 4, 
+        balance_train=True, desired_total_samples=1250
     )
 
     # Initialize ResNet18 
