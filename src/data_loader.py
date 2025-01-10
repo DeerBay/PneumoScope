@@ -1,11 +1,12 @@
 from torchvision import transforms, datasets
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
+import numpy as np
 
 def get_data_loaders(data_dir, batch_size=32,
                      augment_train=True,
                      random_crop=False,
                      color_jitter=False,
-                     num_workers=2):
+                     num_workers=2, balance_train=True, desired_total_samples=None):
     """
     Get DataLoaders for train/val/test.
     :param augment_train: (bool) whether to apply random flips, rotation etc. to train
@@ -60,9 +61,24 @@ def get_data_loaders(data_dir, batch_size=32,
     val_data   = datasets.ImageFolder(root=f'{data_dir}/val',   transform=transform_valtest)
     test_data  = datasets.ImageFolder(root=f'{data_dir}/test',  transform=transform_valtest)
 
-    # Create DataLoaders
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True,
-                              num_workers=num_workers, pin_memory=True)
+
+    # Calculate the total samples for the sampler
+    if desired_total_samples is None:
+        # Default: same number of samples as in the dataset
+        desired_total_samples = len(sample_weights)
+
+        # Oversampling with WeightedRandomSampler
+    if balance_train:
+        targets = [label for _, label in train_data.samples]
+        class_sample_counts = np.bincount(targets)
+        class_weights = 1.0 / class_sample_counts
+        sample_weights = [class_weights[label] for label in targets]
+        sampler = WeightedRandomSampler(sample_weights, num_samples=len(sample_weights), replacement=True)
+        train_loader = DataLoader(train_data, batch_size=batch_size, sampler=sampler, num_workers=num_workers, pin_memory=True)
+    else:
+        train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
+
+
     val_loader   = DataLoader(val_data,   batch_size=batch_size, shuffle=False,
                               num_workers=num_workers, pin_memory=True)
     test_loader  = DataLoader(test_data,  batch_size=batch_size, shuffle=False,
