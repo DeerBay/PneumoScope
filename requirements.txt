@@ -2,6 +2,13 @@ kagglehub==0.3.6
 matplotlib==3.10.0
 numpy==2.2.1
 scikit-learn==1.6.0
-torch==2.5.1
-torchvision==0.20.1
 tqdm==4.67.1
+jupyter==1.1.1
+opencv-python==4.10.0.84
+torch==2.5.1+cu121 # GPU
+torchvision==0.20.1+cu121 # GPU
+torchaudio==2.5.1+cu121 # GPU
+ipykernel==6.29.5
+kagglehub==0.3.6
+plotly==5.24.1
+grad-cam==1.5.4
