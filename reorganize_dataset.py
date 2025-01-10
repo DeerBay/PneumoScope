@@ -2,6 +2,34 @@ import os
 import random
 import shutil
 from pathlib import Path
+from torchvision.transforms.functional import rotate, hflip
+from PIL import Image
+
+def augment_image(image_path, output_path):
+    """
+    Augment a single image by flipping and rotating, then save the augmented versions.
+    """
+    img = Image.open(image_path)
+    augmented_images = [
+        hflip(img),
+        rotate(img, angle=10),
+        rotate(img, angle=-10)
+    ]
+    for idx, aug_img in enumerate(augmented_images):
+        aug_img.save(f"{output_path}_aug{idx}.jpeg")
+
+def augment_random_images(input_dir, output_dir, num_to_augment=10):
+    """
+    Randomly select images from the input directory for augmentation.
+    """
+    image_files = [f for f in os.listdir(input_dir) if f.endswith(('.jpeg', '.jpg', '.png'))]
+    selected_images = random.sample(image_files, min(num_to_augment, len(image_files)))
+
+    for image_file in selected_images:
+        image_path = os.path.join(input_dir, image_file)
+        output_path = os.path.join(output_dir, os.path.splitext(image_file)[0])
+        augment_image(image_path, output_path)
+
 
 def reorganize_dataset(data_dir="data"):
     """
