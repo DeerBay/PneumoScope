@@ -27,10 +27,10 @@
 - [X] Evaluate models on the test set.
 - [X] Compute key metrics:
   - [X] Accuracy
-  - [X] Precision, Recall, F1-score
+  - [X] Precision, Recall, F1-score, Accuracy
   - [ ] ROC-AUC # Ali
-- [ ] Create and display confusion matrices. # Julia
-- [ ] Save model performance results for comparison. # Ali
+- [X] Create and display confusion matrices. # Julia
+- [X] Save model performance results for comparison. # Ali
 
 ## **5. Optimization** # Sebastian
 - [ ] Fine-tune hyperparameters (learning rate, batch size, number of epochs). 
