@@ -18,7 +18,7 @@ def augment_image(image_path, output_path):
     for idx, aug_img in enumerate(augmented_images):
         aug_img.save(f"{output_path}_aug{idx}.jpeg")
 
-def augment_random_images(input_dir, output_dir, num_to_augment=1250):
+def augment_random_images(input_dir, output_dir, num_to_augment=410):
     """
     Randomly select images from the input directory for augmentation.
     """
