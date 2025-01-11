@@ -9,6 +9,6 @@ torch==2.5.1+cu121 # GPU
 torchvision==0.20.1+cu121 # GPU
 torchaudio==2.5.1+cu121 # GPU
 ipykernel==6.29.5
-kagglehub==0.3.6
+kaggle==1.6.17
 plotly==5.24.1
 grad-cam==1.5.4
