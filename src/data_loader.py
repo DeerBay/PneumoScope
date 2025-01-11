@@ -1,17 +1,12 @@
 from torchvision import transforms, datasets
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
+import numpy as np
 
-def get_data_loaders(data_dir, batch_size=32,
-                     augment_train=True,
-                     random_crop=False,
-                     color_jitter=False,
-                     num_workers=2):
+def get_data_loaders(data_dir, batch_size, num_workers, augment_train, random_crop, 
+                    color_jitter, balance_train, desired_total_samples):
     """
     Get DataLoaders for train/val/test.
-    :param augment_train: (bool) whether to apply random flips, rotation etc. to train
-    :param random_crop: (bool) whether to do random crop on train
-    :param color_jitter: (bool) whether to apply color jitter
-    :param num_workers: (int) number of worker processes for data loading
+    All parameters are controlled from train.py to keep hyperparameters in one place.
     """
     
     # Base transform list for "train"
@@ -60,12 +55,37 @@ def get_data_loaders(data_dir, batch_size=32,
     val_data   = datasets.ImageFolder(root=f'{data_dir}/val',   transform=transform_valtest)
     test_data  = datasets.ImageFolder(root=f'{data_dir}/test',  transform=transform_valtest)
 
-    # Create DataLoaders
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True,
-                              num_workers=num_workers, pin_memory=True)
-    val_loader   = DataLoader(val_data,   batch_size=batch_size, shuffle=False,
-                              num_workers=num_workers, pin_memory=True)
-    test_loader  = DataLoader(test_data,  batch_size=batch_size, shuffle=False,
-                              num_workers=num_workers, pin_memory=True)
+    # Create DataLoaders with optional class balancing for training
+    if balance_train:
+        targets = [label for _, label in train_data.samples]
+        class_sample_counts = np.bincount(targets)
+        class_weights = 1.0 / class_sample_counts
+        sample_weights = [class_weights[label] for label in targets]
+        
+        # Set desired_total_samples if not specified
+        if desired_total_samples is None:
+            desired_total_samples = len(sample_weights)
+            
+        sampler = WeightedRandomSampler(sample_weights, 
+                                       num_samples=desired_total_samples, 
+                                       replacement=True)
+        train_loader = DataLoader(train_data, batch_size=batch_size, 
+                                sampler=sampler, 
+                                num_workers=num_workers, 
+                                pin_memory=True)
+    else:
+        train_loader = DataLoader(train_data, batch_size=batch_size, 
+                                shuffle=True,
+                                num_workers=num_workers, 
+                                pin_memory=True)
+
+    val_loader   = DataLoader(val_data,   batch_size=batch_size, 
+                            shuffle=False,
+                            num_workers=num_workers, 
+                            pin_memory=True)
+    test_loader  = DataLoader(test_data,  batch_size=batch_size, 
+                            shuffle=False,
+                            num_workers=num_workers, 
+                            pin_memory=True)
 
     return train_loader, val_loader, test_loader
