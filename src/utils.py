@@ -1,73 +1,55 @@
-# utils.py
-
 import os
 import json
-import datetime
-import numpy as np
-import matplotlib.pyplot as plt
+import torch
 
-def save_training_logs(history, results_dir="results", filename="training_logs.json"):
+CLASS_NAMES = ['Normal', 'Pneumonia']
+
+def print_gpu_stats():
+    """Print GPU memory usage statistics."""
+    if torch.cuda.is_available():
+        print("\nGPU Memory Usage:")
+        print(f"Allocated: {torch.cuda.memory_allocated() / 1024**2:.1f}MB")
+        print(f"Cached: {torch.cuda.memory_reserved() / 1024**2:.1f}MB")
+
+
+def save_checkpoint(model, optimizer, epoch, metrics, save_dir, timestamp=None, is_best=False):
     """
-    Saves the training 'history' dictionary (with losses/acc) as a JSON file in results_dir with a timestamp.
+    Save a model checkpoint with a consistent naming scheme:
+      - Per epoch:  checkpoint_e{epoch}_valloss{X}_valauc{Y}_{timestamp}.pth
+      - Best model: best_model_{timestamp}.pth   (always overwritten)
+    
+    'history' is NOT stored in the checkpoint to reduce file size.
     """
-    os.makedirs(results_dir, exist_ok=True)
+    os.makedirs(save_dir, exist_ok=True)
 
-    # Generate a timestamp
-    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    val_loss_str = f"{metrics['val_loss']:.4f}"
 
-    # Incorporate prefix + timestamp
-    logs_filename = f"{filename}_{timestamp}.json"
-    logs_path = os.path.join(results_dir, logs_filename)
+    # Normal checkpoint, e.g. "checkpoint_e02_valloss0.1234_20250112-181355.pth"
+    checkpoint_filename = (
+        f"checkpoint_e{epoch:02d}"
+        f"_valloss{val_loss_str}"
+        f"_{timestamp}.pth"
+    )
+    checkpoint_path = os.path.join(save_dir, checkpoint_filename)
 
-    with open(logs_path, "w") as f:
-        json.dump(history, f, indent=2)
-        
-    print(f"[INFO] Training logs saved to: {logs_path}")
-    return logs_path
+    # Build a dictionary with minimal data
+    checkpoint = {
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'metrics': metrics,  # keeps val_loss, val_auc, etc
+    }
 
-def plot_confusion_matrix(cm, classes=["Normal", "Pneumonia"], title="Confusion Matrix",
-                         save_path=None, additional_info=None):
-    """
-    Plot and optionally save a confusion matrix.
-    
-    Args:
-        cm (np.ndarray): Confusion matrix to plot
-        classes (list): List of class names
-        title (str): Title for the plot
-        save_path (str, optional): Path to save the plot
-        additional_info (dict, optional): Additional information to add to title
-    """
-    plt.figure(figsize=(5,5))
-    plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
-    
-    # Add title with additional info if provided
-    if additional_info:
-        title += f"\nEpoch {additional_info['epoch']}, "
-        title += f"LR {additional_info['hyperparameters']['learning_rate']}, "
-        title += f"Batch {additional_info['hyperparameters']['batch_size']}\n"
-        title += f"Aug: {additional_info['hyperparameters']['augment_train']}, "
-        title += f"Bal: {additional_info['hyperparameters']['balance_train']}"
-    plt.title(title)
-    
-    plt.colorbar()
-    tick_marks = np.arange(len(classes))
-    plt.xticks(tick_marks, classes, rotation=45)
-    plt.yticks(tick_marks, classes)
+    # Save normal checkpoint
+    torch.save(checkpoint, checkpoint_path)
+    print(f"[INFO] Checkpoint saved: {checkpoint_path}")
 
-    # Add text annotations
-    thresh = cm.max() / 2.
-    for i in range(cm.shape[0]):
-        for j in range(cm.shape[1]):
-            plt.text(j, i, format(cm[i, j], 'd'),
-                     horizontalalignment="center",
-                     color="white" if cm[i, j] > thresh else "black")
+    # If best => overwrite the same file name: best_model_{timestamp}.pth
+    if is_best and timestamp:
+        best_model_name = f"best_model_{timestamp}.pth"
+        best_path = os.path.join(save_dir, best_model_name)
+        torch.save(checkpoint, best_path)
+        print(f"[INFO] Best model overwritten => {best_path}")
+        return best_path
 
-    plt.tight_layout()
-    plt.ylabel('True label')
-    plt.xlabel('Predicted label')
-    
-    if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        print(f"[INFO] Confusion matrix saved to: {save_path}")
-    
-    plt.close()
+    return checkpoint_path
