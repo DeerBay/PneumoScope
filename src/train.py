@@ -1,17 +1,15 @@
-import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.cuda as cuda
 import torch.backends.cudnn as cudnn
 import numpy as np
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
-
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
 from torch.amp import autocast, GradScaler
 from tqdm import tqdm
 
 from src.data_loader import get_data_loaders
 from src.model import PneumoNet
+from src.utils import CLASS_NAMES, save_checkpoint, print_gpu_stats
 
 import datetime
 import os
@@ -20,7 +18,7 @@ import json
 # All hyperparameters in one place
 HYPERPARAMETERS = {
     # Training parameters
-    'epochs': 5,
+    'epochs': 20,
     'learning_rate': 0.001,
     'patience': 5,  # early stopping
     'use_amp': True,  # Automatic Mixed Precision
@@ -28,77 +26,101 @@ HYPERPARAMETERS = {
     # Data loading parameters
     'batch_size': 32,
     'num_workers': max(1, os.cpu_count() - 1),  # Use all cores except one
-    'balance_train': False,  # Use balanced sampling for training
+    'balance_train': True,  # Use balanced sampling for training
     'augment_train': True,  # Use data augmentation
-    'random_crop': False,
-    'color_jitter': False,
+    'random_crop': True,
+    'color_jitter': True,
     'desired_total_samples': None  # Will be set to dataset size if None
 }
 
-def print_gpu_stats():
-    if torch.cuda.is_available():
-        print(f"\nGPU Memory Usage:")
-        print(f"Allocated: {torch.cuda.memory_allocated() / 1024**2:.1f}MB")
-        print(f"Cached: {torch.cuda.memory_reserved() / 1024**2:.1f}MB")
 
-def get_checkpoint_name(epoch: int, metrics: dict, timestamp: str) -> str:
-    """Generate checkpoint filename with key metrics"""
-    return f"checkpoint_e{epoch}_loss{metrics['val_loss']:.4f}_acc{metrics['val_accuracy']:.4f}_{timestamp}.pth"
-
-def save_checkpoint(model, optimizer, epoch: int, metrics: dict, 
-                   save_dir: str, timestamp: str, is_best: bool = False):
+def train_epoch(model, train_loader, val_loader, criterion, optimizer, device, epoch, scaler=None):
     """
-    Spara en checkpoint av modellen. Om det är den bästa modellen hittills (is_best=True),
-    sparas den också som best_model med beskrivande namn innehållande epoch och metrics.
+    Train and validate for one epoch.
     """
-    os.makedirs(save_dir, exist_ok=True)
+    model.train()
+    train_losses = []
+    train_logits = []
+    train_preds = []
+    train_labels_list = []
     
-    # Prepare model info
-    model_info = {
-        'epoch': epoch,
-        'hyperparameters': HYPERPARAMETERS,
-        'metrics': metrics,
-        'timestamp': timestamp  # Lägg till timestamp i model info
-    }
-    
-    checkpoint = {
-        'epoch': epoch,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'metrics': metrics,
-        'timestamp': timestamp  # Lägg till timestamp i checkpoint
-    }
-    
-    # Spara checkpoint med timestamp för att gruppera per träningssession
-    checkpoint_name = get_checkpoint_name(epoch, metrics, timestamp)
-    checkpoint_path = os.path.join(save_dir, checkpoint_name)
-    torch.save(checkpoint, checkpoint_path)
-    print(f"[INFO] Saved checkpoint to: {checkpoint_path}")
-    
-    # Om detta är den bästa modellen hittills, uppdatera best_model
-    if is_best:
-        # Skapa beskrivande filnamn med epoch och metrics
-        best_name = f"best_model_e{epoch}_loss{metrics['val_loss']:.4f}_acc{metrics['val_accuracy']:.4f}"
-        best_path = os.path.join(save_dir, f"{best_name}.pth")
-        best_info_path = os.path.join(save_dir, f"{best_name}_info.json")
+    # Training loop
+    train_pbar = tqdm(train_loader, desc=f"Training (Epoch {epoch+1})", leave=False)
+    for images, labels in train_pbar:
+        images, labels = images.to(device), labels.to(device)
         
-        # Ta bort eventuella tidigare best model filer
-        for old_file in os.listdir(save_dir):
-            if old_file.startswith("best_model_") and (old_file.endswith(".pth") or old_file.endswith("_info.json")):
-                old_path = os.path.join(save_dir, old_file)
-                try:
-                    os.remove(old_path)
-                    print(f"[INFO] Removed previous best model file: {old_file}")
-                except Exception as e:
-                    print(f"[WARNING] Could not remove old file {old_file}: {e}")
+        optimizer.zero_grad()
         
-        # Spara nya best model filer
-        torch.save(checkpoint, best_path)
-        with open(best_info_path, 'w') as f:
-            json.dump(model_info, f, indent=2)
+        if scaler is not None:  # Using AMP
+            with autocast(device_type='cuda' if torch.cuda.is_available() else 'cpu'):
+                outputs = model(images).squeeze()
+                loss = criterion(outputs, labels.float())
             
-        print(f"[INFO] Saved new best model to: {best_path}")
-        print(f"[INFO] Saved model info to: {best_info_path}")
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            outputs = model(images).squeeze()
+            loss = criterion(outputs, labels.float())
+            loss.backward()
+            optimizer.step()
+        
+        # Collect metrics
+        train_losses.append(loss.item())
+        train_logits.extend(outputs.cpu().detach().numpy())
+        preds = (outputs > 0).float()
+        train_preds.extend(preds.cpu().detach().numpy())
+        train_labels_list.extend(labels.cpu().numpy())
+        
+        # Update progress bar
+        train_pbar.set_postfix({'loss': f"{loss.item():.4f}"})
+    
+    # Validation loop
+    model.eval()
+    val_losses = []
+    val_logits = []
+    val_preds = []
+    val_labels_list = []
+    
+    with torch.no_grad():
+        val_pbar = tqdm(val_loader, desc=f"Validation (Epoch {epoch+1})", leave=False)
+        for images, labels in val_pbar:
+            images, labels = images.to(device), labels.to(device)
+            outputs = model(images).squeeze()
+            loss = criterion(outputs, labels.float())
+            
+            val_losses.append(loss.item())
+            val_logits.extend(outputs.cpu().numpy())
+            preds = (outputs > 0).float()
+            val_preds.extend(preds.cpu().numpy())
+            val_labels_list.extend(labels.cpu().numpy())
+            
+            val_pbar.set_postfix({'loss': f"{loss.item():.4f}"})
+    
+    # Calculate metrics
+    metrics = {
+        'train_loss': sum(train_losses) / len(train_losses),
+        'train_precision': precision_score(train_labels_list, train_preds),
+        'train_recall': recall_score(train_labels_list, train_preds),
+        'train_f1': f1_score(train_labels_list, train_preds),
+        'train_accuracy': accuracy_score(train_labels_list, train_preds),
+        'train_auc': roc_auc_score(train_labels_list, train_logits),
+        
+        'val_loss': sum(val_losses) / len(val_losses),
+        'val_precision': precision_score(val_labels_list, val_preds),
+        'val_recall': recall_score(val_labels_list, val_preds),
+        'val_f1': f1_score(val_labels_list, val_preds),
+        'val_accuracy': accuracy_score(val_labels_list, val_preds),
+        'val_auc': roc_auc_score(val_labels_list, val_logits),
+        
+        'train_labels': train_labels_list,
+        'train_logits': train_logits,
+        'val_labels': val_labels_list,
+        'val_logits': val_logits
+    }
+    
+    return metrics
+
 
 def train_model(data_dir: str, save_dir: str = None, results_dir: str = None):
     """
@@ -109,10 +131,10 @@ def train_model(data_dir: str, save_dir: str = None, results_dir: str = None):
         save_dir (str, optional): Directory to save model checkpoints
         results_dir (str, optional): Directory to save training results
     """
-    # Setup directories
-    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    base_dir = os.path.dirname(os.path.dirname(__file__))
+    # Start-of-training timestamp
+    start_timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     
+    base_dir = os.path.dirname(os.path.dirname(__file__))
     if save_dir is None:
         save_dir = os.path.join(base_dir, "saved_models")
     if results_dir is None:
@@ -121,12 +143,8 @@ def train_model(data_dir: str, save_dir: str = None, results_dir: str = None):
     os.makedirs(save_dir, exist_ok=True)
     os.makedirs(results_dir, exist_ok=True)
     
-    # Skapa beskrivande namn för training logs
-    logs_path = os.path.join(results_dir, f"training_logs_e{HYPERPARAMETERS['epochs']}_b{HYPERPARAMETERS['batch_size']}_{timestamp}.json")
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[INFO] Using device: {device}")
-
     if device.type == 'cuda':
         cudnn.benchmark = True
         print("GPU:", torch.cuda.get_device_name(0))
@@ -151,188 +169,143 @@ def train_model(data_dir: str, save_dir: str = None, results_dir: str = None):
     scaler = GradScaler() if HYPERPARAMETERS['use_amp'] else None
 
     best_val_loss = float('inf')
-    best_epoch = 0
+    best_model_path = None
     no_improvement_count = 0
 
-    print(f"[INFO] Training with hyperparameters:")
+    print("\n[INFO] Training with hyperparameters:")
     for param, value in HYPERPARAMETERS.items():
         print(f"  {param}: {value}")
-    print(f"[INFO] Logs will be saved to: {logs_path}")
 
-    # History for plotting
+    # Logs under training
+    temp_logs_path = os.path.join(results_dir, f"temp_training_log_{start_timestamp}.json")
     history = {
         'train_loss': [],
         'train_precision': [],
         'train_recall': [],
         'train_f1': [],
         'train_accuracy': [],
+        'train_auc': [],
         'train_confusion_matrix': [],
+        
         'val_loss': [],
         'val_precision': [],
         'val_recall': [],
         'val_f1': [],
         'val_accuracy': [],
+        'val_auc': [],
         'val_confusion_matrix': []
     }
 
-    # Pre-fetch next batch while current batch is training
-    torch.cuda.empty_cache()  # Clear any unused memory
-    
     print("\n[INFO] Starting training...")
+    final_epoch_reached = 0
+
     for epoch in range(HYPERPARAMETERS['epochs']):
-        print(f"\n=== Epoch {epoch + 1}/{HYPERPARAMETERS['epochs']} ===")
+        current_epoch_num = epoch + 1
+        print(f"\n=== Epoch {current_epoch_num}/{HYPERPARAMETERS['epochs']} ===")
         
-        model.train()
-        train_losses = []
-        train_preds = []
-        train_labels_list = []
+        # One epoch
+        metrics = train_epoch(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            criterion=criterion,
+            optimizer=optimizer,
+            device=device,
+            epoch=epoch,
+            scaler=scaler
+        )
         
-        # Training loop with progress bar
-        train_pbar = tqdm(train_loader, desc=f"Training", leave=False)
-        for images, labels in train_pbar:
-            images, labels = images.to(device), labels.to(device)
-            
-            optimizer.zero_grad()
-            
-            if HYPERPARAMETERS['use_amp']:
-                with autocast(device_type='cuda' if torch.cuda.is_available() else 'cpu'):
-                    outputs = model(images).squeeze()
-                    loss = criterion(outputs, labels.float())
-                
-                scaler.scale(loss).backward()
-                scaler.step(optimizer)
-                scaler.update()
-            else:
-                outputs = model(images).squeeze()
-                loss = criterion(outputs, labels.float())
-                loss.backward()
-                optimizer.step()
-            
-            # Samla metrics för training
-            train_losses.append(loss.item())
-            preds = (outputs > 0).float()
-            train_preds.extend(preds.cpu().numpy())
-            train_labels_list.extend(labels.cpu().numpy())
-            
-            # Update progress bar
-            train_pbar.set_postfix({'loss': f"{loss.item():.4f}"})
+        # Update history
+        history['train_loss'].append(metrics['train_loss'])
+        history['train_precision'].append(float(metrics['train_precision']))
+        history['train_recall'].append(float(metrics['train_recall']))
+        history['train_f1'].append(float(metrics['train_f1']))
+        history['train_accuracy'].append(float(metrics['train_accuracy']))
+        history['train_auc'].append(float(metrics['train_auc']))
+        history['train_confusion_matrix'].append(
+            confusion_matrix(metrics['train_labels'], (np.array(metrics['train_logits']) > 0).astype(int)).tolist()
+        )
         
-        # Validation loop med progress bar
-        model.eval()
-        val_losses = []
-        val_preds = []
-        val_labels_list = []
+        history['val_loss'].append(metrics['val_loss'])
+        history['val_precision'].append(float(metrics['val_precision']))
+        history['val_recall'].append(float(metrics['val_recall']))
+        history['val_f1'].append(float(metrics['val_f1']))
+        history['val_accuracy'].append(float(metrics['val_accuracy']))
+        history['val_auc'].append(float(metrics['val_auc']))
+        history['val_confusion_matrix'].append(
+            confusion_matrix(metrics['val_labels'], (np.array(metrics['val_logits']) > 0).astype(int)).tolist()
+        )
         
-        with torch.no_grad():
-            val_pbar = tqdm(val_loader, desc=f"Validation", leave=False)
-            for images, labels in val_pbar:
-                images, labels = images.to(device), labels.to(device)
-                outputs = model(images).squeeze()
-                loss = criterion(outputs, labels.float())
-                val_losses.append(loss.item())
-                
-                preds = (outputs > 0).float()
-                val_preds.extend(preds.cpu().numpy())
-                val_labels_list.extend(labels.cpu().numpy())
-                
-                # Update progress bar
-                val_pbar.set_postfix({'loss': f"{loss.item():.4f}"})
-        
-        # Beräkna alla metrics
-        train_cm = confusion_matrix(train_labels_list, train_preds).tolist()
-        train_precision = precision_score(train_labels_list, train_preds)
-        train_recall = recall_score(train_labels_list, train_preds)
-        train_f1 = f1_score(train_labels_list, train_preds)
-        train_accuracy = accuracy_score(train_labels_list, train_preds)
-        avg_train_loss = sum(train_losses) / len(train_losses)
-        
-        val_cm = confusion_matrix(val_labels_list, val_preds).tolist()
-        val_precision = precision_score(val_labels_list, val_preds)
-        val_recall = recall_score(val_labels_list, val_preds)
-        val_f1 = f1_score(val_labels_list, val_preds)
-        val_accuracy = accuracy_score(val_labels_list, val_preds)
-        avg_val_loss = sum(val_losses) / len(val_losses)
-        
-        # Uppdatera history
-        history['train_loss'].append(avg_train_loss)
-        history['train_precision'].append(float(train_precision))
-        history['train_recall'].append(float(train_recall))
-        history['train_f1'].append(float(train_f1))
-        history['train_accuracy'].append(float(train_accuracy))
-        history['train_confusion_matrix'].append(train_cm)
-        
-        history['val_loss'].append(avg_val_loss)
-        history['val_precision'].append(float(val_precision))
-        history['val_recall'].append(float(val_recall))
-        history['val_f1'].append(float(val_f1))
-        history['val_accuracy'].append(float(val_accuracy))
-        history['val_confusion_matrix'].append(val_cm)
-        
-        # Skriv ut metrics
-        print(f"\nMetrics for epoch {epoch+1}:")
+        # Print some metrics
+        print(f"\nMetrics for epoch {current_epoch_num}:")
         print("Training:")
-        print(f"  Loss: {avg_train_loss:.4f}")
-        print(f"  Precision: {train_precision:.4f}")
-        print(f"  Recall: {train_recall:.4f}")
-        print(f"  F1-score: {train_f1:.4f}")
-        print(f"  Accuracy: {train_accuracy:.4f}")
-        print(f"  Confusion Matrix:\n{np.array(train_cm)}")
+        print(f"  Loss: {metrics['train_loss']:.4f}")
+        print(f"  Precision: {metrics['train_precision']:.4f}")
+        print(f"  Recall: {metrics['train_recall']:.4f}")
+        print(f"  F1-score: {metrics['train_f1']:.4f}")
+        print(f"  Accuracy: {metrics['train_accuracy']:.4f}")
+        print(f"  AUC: {metrics['train_auc']:.4f}")
+        print(f"  Confusion Matrix:\n{np.array(history['train_confusion_matrix'][-1])}")
         
         print("\nValidation:")
-        print(f"  Loss: {avg_val_loss:.4f}")
-        print(f"  Precision: {val_precision:.4f}")
-        print(f"  Recall: {val_recall:.4f}")
-        print(f"  F1-score: {val_f1:.4f}")
-        print(f"  Accuracy: {val_accuracy:.4f}")
-        print(f"  Confusion Matrix:\n{np.array(val_cm)}")
-        
-        # Spara metrics för denna epoch
-        epoch_metrics = {
-            'train_loss': avg_train_loss,
-            'train_precision': train_precision,
-            'train_recall': train_recall,
-            'train_f1': train_f1,
-            'train_accuracy': train_accuracy,
-            'val_loss': avg_val_loss,
-            'val_precision': val_precision,
-            'val_recall': val_recall,
-            'val_f1': val_f1,
-            'val_accuracy': val_accuracy,
-            'train_confusion_matrix': train_cm,
-            'val_confusion_matrix': val_cm
-        }
-        
-        # Spara checkpoint och eventuellt bästa modellen
-        is_best = avg_val_loss < best_val_loss
-        save_checkpoint(
+        print(f"  Loss: {metrics['val_loss']:.4f}")
+        print(f"  Precision: {metrics['val_precision']:.4f}")
+        print(f"  Recall: {metrics['val_recall']:.4f}")
+        print(f"  F1-score: {metrics['val_f1']:.4f}")
+        print(f"  Accuracy: {metrics['val_accuracy']:.4f}")
+        print(f"  AUC: {metrics['val_auc']:.4f}")
+        print(f"  Confusion Matrix:\n{np.array(history['val_confusion_matrix'][-1])}")
+
+        # Check if best
+        is_best = metrics['val_loss'] < best_val_loss
+
+        # Save checkpoint
+        checkpoint_path = save_checkpoint(
             model=model,
             optimizer=optimizer,
-            epoch=epoch + 1,
-            metrics=epoch_metrics,
+            epoch=current_epoch_num,
+            metrics=metrics,
             save_dir=save_dir,
-            timestamp=timestamp,
+            timestamp=start_timestamp,
             is_best=is_best
         )
         
         if is_best:
-            best_val_loss = avg_val_loss
-            best_epoch = epoch + 1
+            best_val_loss = metrics['val_loss']
+            best_model_path = checkpoint_path
             no_improvement_count = 0
             print(f"\n[INFO] New best model saved! (val_loss: {best_val_loss:.4f})")
         else:
             no_improvement_count += 1
             if no_improvement_count >= HYPERPARAMETERS['patience']:
-                print(f"\n[INFO] Early stopping triggered after {epoch+1} epochs")
+                print(f"\n[INFO] Early stopping triggered after {current_epoch_num} epochs")
+                final_epoch_reached = current_epoch_num
                 break
             else:
                 print(f"\n[INFO] No improvement for {no_improvement_count} epochs")
-
-        # Spara history efter varje epoch
-        with open(logs_path, 'w') as f:
+        
+        # Save logs every epoch
+        with open(temp_logs_path, 'w') as f:
             json.dump(history, f, indent=2)
         
-        if epoch < HYPERPARAMETERS['epochs'] - 1:
-            print("\n[INFO] Starting next epoch...")
+        final_epoch_reached = current_epoch_num
 
     print("\n[INFO] Training completed!")
-    return model, os.path.join(save_dir, f"best_model_{timestamp}.pth"), logs_path
+    
+    # Fallback
+    if best_model_path is None or not os.path.exists(best_model_path):
+        print(f"[WARNING] best_model_path is None or doesn't exist. Using last checkpoint: {checkpoint_path}")
+        best_model_path = checkpoint_path
+
+    # Rename logs with actual epoch
+    final_log_filename = f"training_logs_e{final_epoch_reached:02d}_b{HYPERPARAMETERS['batch_size']}_{start_timestamp}.json"
+    final_logs_path = os.path.join(results_dir, final_log_filename)
+    
+    with open(final_logs_path, 'w') as f:
+        json.dump(history, f, indent=2)
+    print(f"[INFO] Final training logs saved to: {final_logs_path}")
+    
+    if os.path.exists(temp_logs_path):
+        os.remove(temp_logs_path)
+    
+    return model, best_model_path, final_logs_path
