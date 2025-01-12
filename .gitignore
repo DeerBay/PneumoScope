@@ -185,6 +185,8 @@ torchtest.py
 
 # Data folder
 data/
+data_multi/
 
 poetry.lock
 saved_models/*.pth
+saved_models/multiclass_models/*.pth
