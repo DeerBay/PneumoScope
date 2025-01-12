@@ -80,7 +80,9 @@ PneumoScope/
 │   ├── plots/             # Training/validation curves, confusion matrices
 │   └── logs/              # Training logs
 │
+├── main.py                # Main script, runs training and evaluation
 ├── requirements.txt       # List of dependencies
+├── reorganize_dataset.py  # Resizes train|val|test sizes
 ├── README.md              # Project description and instructions
 ├── .gitignore             # Ignored files/folders
 └── LICENSE                # License for the project
