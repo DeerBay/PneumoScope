@@ -33,8 +33,8 @@
 - [X] Save model performance results for comparison. # Ali
 
 ## **5. Optimization** # Sebastian
-- [ ] Fine-tune hyperparameters (learning rate, batch size, number of epochs). 
-- [ ] Implement early stopping and learning rate scheduling. # Early stopping check, learning rate scheduler not yet implemented
+- [X] Fine-tune hyperparameters (learning rate, batch size, number of epochs). 
+- [X] Implement early stopping and learning rate scheduling. # Early stopping check, learning rate scheduler not yet implemented
 - [ ] Test different optimizers (e.g., Adam, SGD).
 - [ ] Experiment with different data augmentation strategies. # Implemented but not tested
 
