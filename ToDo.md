@@ -41,7 +41,7 @@
 ## **6. Visualization** # Julia
 - [X] Plot training and validation loss/accuracy curves. 
 - [X] Visualize some correctly and incorrectly classified images. 
-- [ ] Use Grad-CAM or similar techniques to interpret model predictions. 
+- [X] Use Grad-CAM or similar techniques to interpret model predictions. 
 
 ## **7. Deployment (Optional)** # Younis
 - [ ] Convert the trained model to a format suitable for deployment (e.g., PyTorch, ONNX).
