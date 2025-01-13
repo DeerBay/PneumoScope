@@ -1,9 +1,10 @@
 from torchvision import transforms, datasets
 from torch.utils.data import DataLoader, WeightedRandomSampler
 import numpy as np
+from src.utils import CLASS_NAMES_BINARY, CLASS_NAMES_MULTI
 
 def get_data_loaders(data_dir, batch_size, num_workers, augment_train, random_crop, 
-                    color_jitter, balance_train, desired_total_samples):
+                    color_jitter, balance_train, desired_total_samples, multiclass=False):
     """
     Get DataLoaders for train/val/test.
     All parameters are controlled from train.py to keep hyperparameters in one place.
@@ -54,6 +55,12 @@ def get_data_loaders(data_dir, batch_size, num_workers, augment_train, random_cr
     train_data = datasets.ImageFolder(root=f'{data_dir}/train', transform=transform_train)
     val_data   = datasets.ImageFolder(root=f'{data_dir}/val',   transform=transform_valtest)
     test_data  = datasets.ImageFolder(root=f'{data_dir}/test',  transform=transform_valtest)
+
+    # Verify class mapping matches expected classes
+    expected_classes = CLASS_NAMES_MULTI if multiclass else CLASS_NAMES_BINARY
+    actual_classes = [c for c, _ in sorted(train_data.class_to_idx.items())]
+    if actual_classes != expected_classes:
+        raise ValueError(f"Dataset classes {actual_classes} do not match expected classes {expected_classes}")
 
     # Create DataLoaders with optional class balancing for training
     if balance_train:
