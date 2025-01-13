@@ -72,7 +72,8 @@ def get_data_loaders(data_dir, batch_size, num_workers, augment_train, random_cr
         # Set desired_total_samples if not specified
         if desired_total_samples is None:
             desired_total_samples = len(sample_weights)
-            
+        
+        # WeightedRandomSampler for class balancing, creates samples with replacement
         sampler = WeightedRandomSampler(sample_weights, 
                                        num_samples=desired_total_samples, 
                                        replacement=True)
