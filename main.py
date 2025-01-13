@@ -1,5 +1,5 @@
 import os
-import datetime
+import sys
 
 # Kaggle downloader
 from src.kaggle_downloader import download_dataset_if_needed  # see below for the updated function
@@ -53,7 +53,7 @@ def main():
     results_dir_binary = os.path.join(base_dir, "results")
 
     print("\n[INFO] Starting BINARY training...")
-    model_bin, best_bin_path, bin_logs_path = train_model(
+    _, best_bin_path, _ = train_model(
         data_dir=data_dir_binary,
         save_dir=save_dir_binary,
         results_dir=results_dir_binary
@@ -71,7 +71,9 @@ def main():
         print(f"[BINARY] Precision={precision:.4f}, Recall={recall:.4f}, "
               f"F1={f1:.4f}, Acc={accuracy:.4f}, AUC={auc_score:.4f}")
     else:
-        print("[ERROR] Best binary model not found.")
+        print("[ERROR] Best binary model not found at:", best_bin_path)
+        print("[ERROR] Cannot proceed without binary model evaluation.")
+        sys.exit(1)  # Exit with error code
 
     # 3) Train multiclass
     data_dir_multi = data_multi_dir  # 'data_multi' folder for multiclass
@@ -79,7 +81,7 @@ def main():
     results_dir_multi = os.path.join(base_dir, "results", "multiclass")
 
     print("\n[INFO] Starting MULTICLASS training...")
-    model_multi, best_multi_path, multi_logs_path = train_model_multiclass(
+    _, best_multi_path, _ = train_model_multiclass(
         data_dir=data_dir_multi,
         save_dir=save_dir_multi,
         results_dir=results_dir_multi
@@ -96,7 +98,9 @@ def main():
         print(f"[MULTICLASS] Precision(macro)={precision_m:.4f}, "
               f"Recall(macro)={recall_m:.4f}, F1(macro)={f1_m:.4f}, Acc={acc_m:.4f}")
     else:
-        print("[ERROR] Best multiclass model not found.")
+        print("[ERROR] Best multiclass model not found at:", best_multi_path)
+        print("[ERROR] Cannot proceed without multiclass model evaluation.")
+        sys.exit(1)  # Exit with error code
 
     print("\n[INFO] Done. Both binary and multiclass training/evaluation completed.")
 
