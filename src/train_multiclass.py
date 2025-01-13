@@ -1,24 +1,24 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.backends.cudnn as cudnn
 import numpy as np
 from sklearn.metrics import (
-    accuracy_score, 
-    f1_score, 
-    confusion_matrix,
     precision_score,
-    recall_score
+    recall_score,
+    f1_score,
+    accuracy_score,
+    confusion_matrix,
+    precision_recall_fscore_support
 )
 from torch.amp import autocast, GradScaler
 from tqdm import tqdm
 import datetime
 import os
 import json
+import shutil
 
 from src.data_loader import get_data_loaders
-from src.model import PneumoNet
-from src.utils import print_gpu_stats, save_checkpoint
+from src.utils import CLASS_NAMES_MULTI, save_checkpoint, print_gpu_stats
 
 class PneumoNetMulti(nn.Module):
     """
@@ -46,18 +46,22 @@ class PneumoNetMulti(nn.Module):
 
 # Multiclass hyperparameters
 MULTI_HYPERPARAMS = {
-    'epochs': 30,              
+    'epochs': 50,              
     'learning_rate': 0.001,    # Initial learning rate for Adam optimizer
-    'patience': 5,
+    'patience': 10,
     'use_amp': True,
 
-    'batch_size': 128,        # Number of samples per batch
+    'batch_size': 32,        # Number of samples per batch
     'num_workers': max(1, os.cpu_count() - 1),  # DataLoader workers
-    'balance_train': True,    # Whether to balance class distribution
+    'balance_train': False,    # Whether to balance class distribution
     'augment_train': True,
-    'random_crop': True, 
+    'random_crop': False, 
     'color_jitter': True,
-    'desired_total_samples': None  # Target number of samples (None for all)
+    'desired_total_samples': None,  # Target number of samples (None for all)
+    
+    # Early stopping configuration
+    'monitor': 'val_f1',       # Metric to monitor: val_loss, val_f1, val_accuracy
+    'monitor_mode': 'max',     # 'min' for loss, 'max' for metrics
 }
 
 def train_epoch_multiclass(model, train_loader, val_loader, criterion, optimizer, device, epoch, scaler=None):
@@ -81,11 +85,12 @@ def train_epoch_multiclass(model, train_loader, val_loader, criterion, optimizer
             - F1 Score (train/val)
             - Precision (train/val)
             - Recall (train/val)
-            - Raw predictions and labels
+            - Raw predictions, probabilities and labels
     """
     model.train()
     train_losses = []
     train_preds = []
+    train_probs = []  # Store probabilities
     train_labels_list = []
 
     train_pbar = tqdm(train_loader, desc=f"Training Multi (Epoch {epoch+1})", leave=False)
@@ -107,9 +112,18 @@ def train_epoch_multiclass(model, train_loader, val_loader, criterion, optimizer
             loss.backward()
             optimizer.step()
 
+        # Convert logits to probabilities using softmax
+        probs = torch.softmax(outputs, dim=1).detach()
+        
+        # Check for NaN values
+        if torch.isnan(probs).any():
+            print("[WARNING] NaN values detected in probabilities!")
+            probs = torch.nan_to_num(probs, nan=1.0/3.0)  # Replace NaN with uniform probability
+        
         train_losses.append(loss.item())
-        preds = outputs.argmax(dim=1)
+        preds = probs.argmax(dim=1)
         train_preds.extend(preds.cpu().numpy())
+        train_probs.extend(probs.cpu().numpy())
         train_labels_list.extend(labels.cpu().numpy())
 
         train_pbar.set_postfix({'loss': f"{loss.item():.4f}"})
@@ -118,6 +132,7 @@ def train_epoch_multiclass(model, train_loader, val_loader, criterion, optimizer
     model.eval()
     val_losses = []
     val_preds = []
+    val_probs = []  # Store probabilities
     val_labels_list = []
 
     with torch.no_grad():
@@ -128,40 +143,49 @@ def train_epoch_multiclass(model, train_loader, val_loader, criterion, optimizer
             outputs = model(images)
             loss = criterion(outputs, labels)
 
+            # Convert logits to probabilities
+            probs = torch.softmax(outputs, dim=1)
+            
+            # Check for NaN values
+            if torch.isnan(probs).any():
+                print("[WARNING] NaN values detected in validation probabilities!")
+                probs = torch.nan_to_num(probs, nan=1.0/3.0)
+
             val_losses.append(loss.item())
-            preds = outputs.argmax(dim=1)
+            preds = probs.argmax(dim=1)
             val_preds.extend(preds.cpu().numpy())
+            val_probs.extend(probs.cpu().numpy())
             val_labels_list.extend(labels.cpu().numpy())
 
             val_pbar.set_postfix({'loss': f"{loss.item():.4f}"})
 
     train_loss = np.mean(train_losses)
     val_loss = np.mean(val_losses)
-    train_acc = accuracy_score(train_labels_list, train_preds)
-    val_acc   = accuracy_score(val_labels_list, val_preds)
-    train_f1  = f1_score(train_labels_list, train_preds, average='macro')
-    val_f1    = f1_score(val_labels_list, val_preds, average='macro')
-    train_precision = precision_score(train_labels_list, train_preds, average='macro')
-    val_precision = precision_score(val_labels_list, val_preds, average='macro')
-    train_recall = recall_score(train_labels_list, train_preds, average='macro')
-    val_recall = recall_score(val_labels_list, val_preds, average='macro')
-
+    
+    # Convert lists to numpy arrays for metric calculations
+    train_labels_array = np.array(train_labels_list)
+    train_preds_array = np.array(train_preds)
+    val_labels_array = np.array(val_labels_list)
+    val_preds_array = np.array(val_preds)
+    
     metrics = {
         'train_loss': train_loss,
         'val_loss': val_loss,
-        'train_accuracy': train_acc,
-        'val_accuracy': val_acc,
-        'train_f1': train_f1,
-        'val_f1': val_f1,
-        'train_precision': train_precision,
-        'val_precision': val_precision,
-        'train_recall': train_recall,
-        'val_recall': val_recall,
-        # store raw labels/preds if needed
+        'train_accuracy': accuracy_score(train_labels_array, train_preds_array),
+        'val_accuracy': accuracy_score(val_labels_array, val_preds_array),
+        'train_f1': f1_score(train_labels_array, train_preds_array, average='macro'),
+        'val_f1': f1_score(val_labels_array, val_preds_array, average='macro'),
+        'train_precision': precision_score(train_labels_array, train_preds_array, average='macro'),
+        'val_precision': precision_score(val_labels_array, val_preds_array, average='macro'),
+        'train_recall': recall_score(train_labels_array, train_preds_array, average='macro'),
+        'val_recall': recall_score(val_labels_array, val_preds_array, average='macro'),
+        # store raw data
         'train_labels': train_labels_list,
         'train_preds': train_preds,
+        'train_probs': train_probs,
         'val_labels': val_labels_list,
-        'val_preds': val_preds
+        'val_preds': val_preds,
+        'val_probs': val_probs
     }
     return metrics
 
@@ -203,6 +227,7 @@ def train_model_multiclass(data_dir: str, save_dir: str=None, results_dir: str=N
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[INFO] (Multiclass) Using device: {device}")
     if device.type == 'cuda':
+        from torch.backends import cudnn
         cudnn.benchmark = True
         print_gpu_stats()
 
@@ -214,7 +239,8 @@ def train_model_multiclass(data_dir: str, save_dir: str=None, results_dir: str=N
         random_crop=MULTI_HYPERPARAMS['random_crop'],
         color_jitter=MULTI_HYPERPARAMS['color_jitter'],
         balance_train=MULTI_HYPERPARAMS['balance_train'],
-        desired_total_samples=MULTI_HYPERPARAMS['desired_total_samples']
+        desired_total_samples=MULTI_HYPERPARAMS['desired_total_samples'],
+        multiclass=True  # Specify multiclass mode
     )
 
     model = PneumoNetMulti(use_pretrained=True).to(device)
@@ -222,9 +248,13 @@ def train_model_multiclass(data_dir: str, save_dir: str=None, results_dir: str=N
     optimizer = optim.Adam(model.parameters(), lr=MULTI_HYPERPARAMS['learning_rate'])
     scaler = GradScaler() if MULTI_HYPERPARAMS['use_amp'] else None
 
-    best_val_loss = float('inf')
-    best_model_path = None
-    no_improvement_count = 0
+    best_metric = float('-inf') if MULTI_HYPERPARAMS['monitor_mode'] == 'max' else float('inf')
+    patience_counter = 0
+    
+    print(f"\n[INFO] Starting training with:")
+    print(f"  Monitor metric: {MULTI_HYPERPARAMS['monitor']}")
+    print(f"  Monitor mode: {MULTI_HYPERPARAMS['monitor_mode']}")
+    print(f"  Patience: {MULTI_HYPERPARAMS['patience']}")
 
     # We'll log
     temp_logs_path = os.path.join(results_dir, f"temp_training_log_multi_{start_timestamp}.json")
@@ -294,35 +324,51 @@ def train_model_multiclass(data_dir: str, save_dir: str=None, results_dir: str=N
         print(f"Train: loss={train_loss:.4f}, acc={train_acc:.4f}, f1={train_f1:.4f}, precision={train_precision:.4f}, recall={train_recall:.4f}")
         print(f"Val:   loss={val_loss:.4f}, acc={val_acc:.4f}, f1={val_f1:.4f}, precision={val_precision:.4f}, recall={val_recall:.4f}")
 
-        # Save checkpoint
-        is_best = val_loss < best_val_loss
-        # We'll only track val_loss in "metrics" for saving
-        chpt_metrics = {
-            'val_loss': val_loss,
-            'val_f1': val_f1
-        }
-        checkpoint_path = save_checkpoint(
-            model=model,
-            optimizer=optimizer,
-            epoch=current_epoch_num,
-            metrics=chpt_metrics,
-            save_dir=save_dir,
-            timestamp=start_timestamp,
-            is_best=is_best
-        )
-        if is_best:
-            best_val_loss = val_loss
-            best_model_path = checkpoint_path
-            no_improvement_count = 0
-            print("[INFO] New best multi model!")
+        # Get current metric value
+        current_metric = metrics[MULTI_HYPERPARAMS['monitor']]
+        
+        # Check if metric improved
+        improved = (MULTI_HYPERPARAMS['monitor_mode'] == 'max' and current_metric > best_metric) or \
+                  (MULTI_HYPERPARAMS['monitor_mode'] == 'min' and current_metric < best_metric)
+        
+        if improved:
+            best_metric = current_metric
+            patience_counter = 0
+            
+            # Save checkpoint with metrics
+            metrics_to_save = {
+                'val_loss': metrics['val_loss'],
+                'val_f1': metrics['val_f1'],
+                'val_accuracy': metrics['val_accuracy'],
+                'best_metric': best_metric,
+                'monitor': MULTI_HYPERPARAMS['monitor'],
+                'monitor_mode': MULTI_HYPERPARAMS['monitor_mode']
+            }
+            
+            # Save checkpoint
+            checkpoint_path = os.path.join(
+                save_dir, 
+                f'checkpoint_e{epoch+1:02d}_{MULTI_HYPERPARAMS["monitor"]}{current_metric:.4f}_{start_timestamp}.pth'
+            )
+            save_checkpoint(model, optimizer, epoch, checkpoint_path, metrics_to_save)
+            
+            # Copy to best model file
+            best_model_path = os.path.join(save_dir, f'best_model_{start_timestamp}.pth')
+            shutil.copy2(checkpoint_path, best_model_path)
+            
+            print(f"\n[INFO] {MULTI_HYPERPARAMS['monitor']} improved to {current_metric:.4f}")
+            print(f"[INFO] Saved checkpoint: {checkpoint_path}")
+            print(f"[INFO] Updated best model: {best_model_path}")
         else:
-            no_improvement_count += 1
-            if no_improvement_count >= MULTI_HYPERPARAMS['patience']:
-                print("[INFO] Early stopping (multiclass).")
-                final_epoch_reached = current_epoch_num
-                break
-            else:
-                print(f"[INFO] No improvement for {no_improvement_count} epochs")
+            patience_counter += 1
+            print(f"\n[INFO] {MULTI_HYPERPARAMS['monitor']} did not improve from {best_metric:.4f}")
+            print(f"[INFO] Patience: {patience_counter}/{MULTI_HYPERPARAMS['patience']}")
+        
+        # Early stopping check
+        if patience_counter >= MULTI_HYPERPARAMS['patience']:
+            print(f"\n[INFO] Early stopping triggered after {epoch + 1} epochs")
+            print(f"[INFO] Best {MULTI_HYPERPARAMS['monitor']}: {best_metric:.4f}")
+            break
 
         # Save logs
         with open(temp_logs_path, 'w') as f:

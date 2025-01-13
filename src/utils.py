@@ -2,54 +2,49 @@ import os
 import json
 import torch
 
-CLASS_NAMES = ['Normal', 'Pneumonia']
+# Class names for binary and multiclass classification
+CLASS_NAMES_BINARY = ['NORMAL', 'PNEUMONIA']  # Matchar mappnamnen i filsystemet
+CLASS_NAMES_MULTI = ['BACTERIA', 'NORMAL', 'VIRUS']  # Matchar alfabetisk ordning från ImageFolder
 
 def print_gpu_stats():
     """Print GPU memory usage statistics."""
     if torch.cuda.is_available():
         print("\nGPU Memory Usage:")
-        print(f"Allocated: {torch.cuda.memory_allocated() / 1024**2:.1f}MB")
-        print(f"Cached: {torch.cuda.memory_reserved() / 1024**2:.1f}MB")
+        for i in range(torch.cuda.device_count()):
+            print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+            print(f"  Allocated: {torch.cuda.memory_allocated(i) / 1024**2:.1f}MB")
+            print(f"  Cached:    {torch.cuda.memory_reserved(i) / 1024**2:.1f}MB")
+    else:
+        print("\n[INFO] No GPU available. Using CPU.")
 
-
-def save_checkpoint(model, optimizer, epoch, metrics, save_dir, timestamp=None, is_best=False):
+def save_checkpoint(model, optimizer, epoch, checkpoint_path, metrics=None):
     """
-    Save a model checkpoint with a consistent naming scheme:
-      - Per epoch:  checkpoint_e{epoch}_valloss{X}_valauc{Y}_{timestamp}.pth
-      - Best model: best_model_{timestamp}.pth   (always overwritten)
+    Save a model checkpoint.
     
-    'history' is NOT stored in the checkpoint to reduce file size.
+    Args:
+        model (nn.Module): The PyTorch model to save
+        optimizer (torch.optim.Optimizer): The optimizer used for training
+        epoch (int): Current epoch number
+        checkpoint_path (str): Full path where to save the checkpoint
+        metrics (dict, optional): Dictionary of metrics to save with the checkpoint
+    
+    Returns:
+        str: Path to the saved checkpoint
     """
-    os.makedirs(save_dir, exist_ok=True)
-
-    val_loss_str = f"{metrics['val_loss']:.4f}"
-
-    # Normal checkpoint, e.g. "checkpoint_e02_valloss0.1234_20250112-181355.pth"
-    checkpoint_filename = (
-        f"checkpoint_e{epoch:02d}"
-        f"_valloss{val_loss_str}"
-        f"_{timestamp}.pth"
-    )
-    checkpoint_path = os.path.join(save_dir, checkpoint_filename)
-
-    # Build a dictionary with minimal data
     checkpoint = {
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
-        'metrics': metrics,  # keeps val_loss, val_auc, etc
     }
-
-    # Save normal checkpoint
+    
+    if metrics is not None:
+        checkpoint['metrics'] = metrics
+    
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+    
+    # Save checkpoint
     torch.save(checkpoint, checkpoint_path)
     print(f"[INFO] Checkpoint saved: {checkpoint_path}")
-
-    # If best => overwrite the same file name: best_model_{timestamp}.pth
-    if is_best and timestamp:
-        best_model_name = f"best_model_{timestamp}.pth"
-        best_path = os.path.join(save_dir, best_model_name)
-        torch.save(checkpoint, best_path)
-        print(f"[INFO] Best model overwritten => {best_path}")
-        return best_path
-
+    
     return checkpoint_path

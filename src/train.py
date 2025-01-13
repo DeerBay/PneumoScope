@@ -1,24 +1,23 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.backends.cudnn as cudnn
 import numpy as np
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
 from torch.amp import autocast, GradScaler
 from tqdm import tqdm
-
-from src.data_loader import get_data_loaders
-from src.model import PneumoNet
-from src.utils import CLASS_NAMES, save_checkpoint, print_gpu_stats
-
 import datetime
 import os
 import json
+import shutil  
+
+from src.data_loader import get_data_loaders
+from src.model import PneumoNet
+from src.utils import save_checkpoint, print_gpu_stats
+from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score, roc_auc_score, confusion_matrix
 
 # All hyperparameters in one place
 HYPERPARAMETERS = {
     # Training parameters
-    'epochs': 20,
+    'epochs': 30,
     'learning_rate': 0.001,
     'patience': 5,  # early stopping
     'use_amp': True,  # Automatic Mixed Precision
@@ -30,7 +29,11 @@ HYPERPARAMETERS = {
     'augment_train': True,  # Use data augmentation
     'random_crop': True,
     'color_jitter': True,
-    'desired_total_samples': None  # Will be set to dataset size if None
+    'desired_total_samples': None,  # Will be set to dataset size if None
+    
+    # Early stopping configuration
+    'monitor': 'val_auc',      # Metric to monitor: val_loss, val_auc, val_f1
+    'monitor_mode': 'max',     # 'min' for loss, 'max' for metrics
 }
 
 
@@ -40,7 +43,7 @@ def train_epoch(model, train_loader, val_loader, criterion, optimizer, device, e
     """
     model.train()
     train_losses = []
-    train_logits = []
+    train_probs = []  
     train_preds = []
     train_labels_list = []
     
@@ -49,13 +52,14 @@ def train_epoch(model, train_loader, val_loader, criterion, optimizer, device, e
     for images, labels in train_pbar:
         images, labels = images.to(device), labels.to(device)
         
+        # Zero the parameter gradients
         optimizer.zero_grad()
         
         if scaler is not None:  # Using AMP
             with autocast(device_type='cuda' if torch.cuda.is_available() else 'cpu'):
                 outputs = model(images).squeeze()
                 loss = criterion(outputs, labels.float())
-            
+                
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
@@ -65,11 +69,19 @@ def train_epoch(model, train_loader, val_loader, criterion, optimizer, device, e
             loss.backward()
             optimizer.step()
         
+        # Convert logits to probabilities using sigmoid
+        probs = torch.sigmoid(outputs).detach()
+        
+        # Check for NaN values
+        if torch.isnan(probs).any():
+            print("[WARNING] NaN values detected in probabilities!")
+            probs = torch.nan_to_num(probs, nan=0.5)  
+            
         # Collect metrics
         train_losses.append(loss.item())
-        train_logits.extend(outputs.cpu().detach().numpy())
-        preds = (outputs > 0).float()
-        train_preds.extend(preds.cpu().detach().numpy())
+        train_probs.extend(probs.cpu().numpy())
+        preds = (probs > 0.5).float()
+        train_preds.extend(preds.cpu().numpy())
         train_labels_list.extend(labels.cpu().numpy())
         
         # Update progress bar
@@ -78,7 +90,7 @@ def train_epoch(model, train_loader, val_loader, criterion, optimizer, device, e
     # Validation loop
     model.eval()
     val_losses = []
-    val_logits = []
+    val_probs = []  
     val_preds = []
     val_labels_list = []
     
@@ -89,9 +101,17 @@ def train_epoch(model, train_loader, val_loader, criterion, optimizer, device, e
             outputs = model(images).squeeze()
             loss = criterion(outputs, labels.float())
             
+            # Convert logits to probabilities
+            probs = torch.sigmoid(outputs)
+            
+            # Check for NaN values
+            if torch.isnan(probs).any():
+                print("[WARNING] NaN values detected in validation probabilities!")
+                probs = torch.nan_to_num(probs, nan=0.5)
+            
             val_losses.append(loss.item())
-            val_logits.extend(outputs.cpu().numpy())
-            preds = (outputs > 0).float()
+            val_probs.extend(probs.cpu().numpy())
+            preds = (probs > 0.5).float()
             val_preds.extend(preds.cpu().numpy())
             val_labels_list.extend(labels.cpu().numpy())
             
@@ -104,19 +124,19 @@ def train_epoch(model, train_loader, val_loader, criterion, optimizer, device, e
         'train_recall': recall_score(train_labels_list, train_preds),
         'train_f1': f1_score(train_labels_list, train_preds),
         'train_accuracy': accuracy_score(train_labels_list, train_preds),
-        'train_auc': roc_auc_score(train_labels_list, train_logits),
+        'train_auc': roc_auc_score(train_labels_list, train_probs),
         
         'val_loss': sum(val_losses) / len(val_losses),
         'val_precision': precision_score(val_labels_list, val_preds),
         'val_recall': recall_score(val_labels_list, val_preds),
         'val_f1': f1_score(val_labels_list, val_preds),
         'val_accuracy': accuracy_score(val_labels_list, val_preds),
-        'val_auc': roc_auc_score(val_labels_list, val_logits),
+        'val_auc': roc_auc_score(val_labels_list, val_probs),
         
         'train_labels': train_labels_list,
-        'train_logits': train_logits,
+        'train_probs': train_probs,  
         'val_labels': val_labels_list,
-        'val_logits': val_logits
+        'val_probs': val_probs      
     }
     
     return metrics
@@ -146,6 +166,7 @@ def train_model(data_dir: str, save_dir: str = None, results_dir: str = None):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[INFO] Using device: {device}")
     if device.type == 'cuda':
+        from torch.backends import cudnn
         cudnn.benchmark = True
         print("GPU:", torch.cuda.get_device_name(0))
         print("cuDNN Enabled:", cudnn.enabled)
@@ -168,13 +189,17 @@ def train_model(data_dir: str, save_dir: str = None, results_dir: str = None):
     optimizer = optim.Adam(model.parameters(), lr=HYPERPARAMETERS['learning_rate'])
     scaler = GradScaler() if HYPERPARAMETERS['use_amp'] else None
 
-    best_val_loss = float('inf')
-    best_model_path = None
-    no_improvement_count = 0
+    best_metric = float('-inf') if HYPERPARAMETERS['monitor_mode'] == 'max' else float('inf')
+    patience_counter = 0
 
     print("\n[INFO] Training with hyperparameters:")
     for param, value in HYPERPARAMETERS.items():
         print(f"  {param}: {value}")
+
+    print(f"\n[INFO] Starting training with:")
+    print(f"  Monitor metric: {HYPERPARAMETERS['monitor']}")
+    print(f"  Monitor mode: {HYPERPARAMETERS['monitor_mode']}")
+    print(f"  Patience: {HYPERPARAMETERS['patience']}")
 
     # Logs under training
     temp_logs_path = os.path.join(results_dir, f"temp_training_log_{start_timestamp}.json")
@@ -223,7 +248,7 @@ def train_model(data_dir: str, save_dir: str = None, results_dir: str = None):
         history['train_accuracy'].append(float(metrics['train_accuracy']))
         history['train_auc'].append(float(metrics['train_auc']))
         history['train_confusion_matrix'].append(
-            confusion_matrix(metrics['train_labels'], (np.array(metrics['train_logits']) > 0).astype(int)).tolist()
+            confusion_matrix(metrics['train_labels'], (np.array(metrics['train_probs']) > 0.5).astype(int)).tolist()
         )
         
         history['val_loss'].append(metrics['val_loss'])
@@ -233,8 +258,49 @@ def train_model(data_dir: str, save_dir: str = None, results_dir: str = None):
         history['val_accuracy'].append(float(metrics['val_accuracy']))
         history['val_auc'].append(float(metrics['val_auc']))
         history['val_confusion_matrix'].append(
-            confusion_matrix(metrics['val_labels'], (np.array(metrics['val_logits']) > 0).astype(int)).tolist()
+            confusion_matrix(metrics['val_labels'], (np.array(metrics['val_probs']) > 0.5).astype(int)).tolist()
         )
+        
+        # Get current metric value
+        current_metric = metrics[HYPERPARAMETERS['monitor']]
+        
+        # Check if metric improved
+        improved = (HYPERPARAMETERS['monitor_mode'] == 'max' and current_metric > best_metric) or \
+                  (HYPERPARAMETERS['monitor_mode'] == 'min' and current_metric < best_metric)
+        
+        if improved:
+            best_metric = current_metric
+            patience_counter = 0
+            
+            # Save checkpoint with metrics
+            metrics_to_save = {
+                'train_loss': metrics['train_loss'],
+                'val_loss': metrics['val_loss'],
+                'val_auc': metrics['val_auc'],
+                'val_f1': metrics['val_f1'],
+                'best_metric': best_metric,
+                'monitor': HYPERPARAMETERS['monitor'],
+                'monitor_mode': HYPERPARAMETERS['monitor_mode']
+            }
+            
+            # Save checkpoint
+            checkpoint_path = os.path.join(
+                save_dir, 
+                f'checkpoint_e{epoch+1:02d}_{HYPERPARAMETERS["monitor"]}{current_metric:.4f}_{start_timestamp}.pth'
+            )
+            save_checkpoint(model, optimizer, epoch, checkpoint_path, metrics_to_save)
+            
+            # Copy to best model file
+            best_model_path = os.path.join(save_dir, f'best_model_{start_timestamp}.pth')
+            shutil.copy2(checkpoint_path, best_model_path)
+            
+            print(f"\n[INFO] {HYPERPARAMETERS['monitor']} improved to {current_metric:.4f}")
+            print(f"[INFO] Saved checkpoint: {checkpoint_path}")
+            print(f"[INFO] Updated best model: {best_model_path}")
+        else:
+            patience_counter += 1
+            print(f"\n[INFO] {HYPERPARAMETERS['monitor']} did not improve from {best_metric:.4f}")
+            print(f"[INFO] Patience: {patience_counter}/{HYPERPARAMETERS['patience']}")
         
         # Print some metrics
         print(f"\nMetrics for epoch {current_epoch_num}:")
@@ -256,33 +322,11 @@ def train_model(data_dir: str, save_dir: str = None, results_dir: str = None):
         print(f"  AUC: {metrics['val_auc']:.4f}")
         print(f"  Confusion Matrix:\n{np.array(history['val_confusion_matrix'][-1])}")
 
-        # Check if best
-        is_best = metrics['val_loss'] < best_val_loss
-
-        # Save checkpoint
-        checkpoint_path = save_checkpoint(
-            model=model,
-            optimizer=optimizer,
-            epoch=current_epoch_num,
-            metrics=metrics,
-            save_dir=save_dir,
-            timestamp=start_timestamp,
-            is_best=is_best
-        )
-        
-        if is_best:
-            best_val_loss = metrics['val_loss']
-            best_model_path = checkpoint_path
-            no_improvement_count = 0
-            print(f"\n[INFO] New best model saved! (val_loss: {best_val_loss:.4f})")
-        else:
-            no_improvement_count += 1
-            if no_improvement_count >= HYPERPARAMETERS['patience']:
-                print(f"\n[INFO] Early stopping triggered after {current_epoch_num} epochs")
-                final_epoch_reached = current_epoch_num
-                break
-            else:
-                print(f"\n[INFO] No improvement for {no_improvement_count} epochs")
+        # Early stopping check
+        if patience_counter >= HYPERPARAMETERS['patience']:
+            print(f"\n[INFO] Early stopping triggered after {epoch + 1} epochs")
+            print(f"[INFO] Best {HYPERPARAMETERS['monitor']}: {best_metric:.4f}")
+            break
         
         # Save logs every epoch
         with open(temp_logs_path, 'w') as f:
