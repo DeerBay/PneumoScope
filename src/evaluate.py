@@ -1,7 +1,6 @@
+import json
 import torch
 import numpy as np
-import json
-from torch import nn
 from sklearn.metrics import (
     confusion_matrix,
     precision_score,
@@ -10,14 +9,14 @@ from sklearn.metrics import (
     accuracy_score,
     roc_auc_score,
     roc_curve,
-    precision_recall_curve,
-    average_precision_score
+    average_precision_score,
+    precision_recall_curve
 )
-from src.data_loader import get_data_loaders
-from src.model import PneumoNet
-from src.utils import CLASS_NAMES  # Removed plot functions
 from tqdm import tqdm
 import os
+from src.utils import CLASS_NAMES_BINARY as CLASS_NAMES  # Updated CLASS_NAMES
+from src.data_loader import get_data_loaders
+from src.model import PneumoNet
 
 # Dedicated parameters for evaluation - never use augmentation or balancing
 HYPERPARAMETERS = {
@@ -54,11 +53,11 @@ def evaluate_model(model_path, data_dir, results_dir='results', plot_cm=False):
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
 
-    # Extract possible info about model (epoch, loss etc)
+    # Extract model info from checkpoint
     model_info = {
         'epoch': checkpoint.get('epoch', None),
-        'train_loss': checkpoint.get('metrics', {}).get('train_loss', None),
-        'val_loss': checkpoint.get('metrics', {}).get('val_loss', None),
+        'train_loss': checkpoint.get('metrics', {}).get('train_loss', checkpoint.get('train_loss', None)),
+        'val_loss': checkpoint.get('metrics', {}).get('val_loss', checkpoint.get('val_loss', None)),
         'model_name': base_name
     }
 
@@ -74,6 +73,11 @@ def evaluate_model(model_path, data_dir, results_dir='results', plot_cm=False):
         color_jitter=False
     )
 
+    # Verify test dataset classes match expected binary classes
+    test_classes = [c for c, _ in sorted(test_loader.dataset.class_to_idx.items())]
+    if test_classes != CLASS_NAMES:
+        raise ValueError(f"Test dataset classes {test_classes} do not match expected binary classes {CLASS_NAMES}")
+
     # Inference loop
     all_preds = []
     all_labels = []
@@ -84,7 +88,7 @@ def evaluate_model(model_path, data_dir, results_dir='results', plot_cm=False):
         for images, labels in test_pbar:
             images, labels = images.to(device), labels.to(device)
             logits = model(images).squeeze()
-            preds = (logits > 0).float()
+            preds = (logits > 0).float() # threshold at 0 => sigmoid = 0.5
             
             all_preds.extend(preds.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
@@ -123,6 +127,17 @@ def evaluate_model(model_path, data_dir, results_dir='results', plot_cm=False):
     print(f"PR-AUC:    {pr_auc:.4f}")
     print(f"Avg Precision: {avg_precision:.4f}")
 
+    # Per-class metrics
+    print("\nPer-class metrics:")
+    for i, class_name in enumerate(CLASS_NAMES):
+        class_precision = cm[i][i] / cm[i].sum() if cm[i].sum() > 0 else 0
+        class_recall = cm[i][i] / cm[:,i].sum() if cm[:,i].sum() > 0 else 0
+        class_f1 = 2 * (class_precision * class_recall) / (class_precision + class_recall) if (class_precision + class_recall) > 0 else 0
+        print(f"{class_name}:")
+        print(f"  Precision: {class_precision:.4f}")
+        print(f"  Recall:    {class_recall:.4f}")
+        print(f"  F1-score:  {class_f1:.4f}")
+
     # Save metrics to JSON
     metrics = {
         'model_name': base_name,
@@ -135,7 +150,17 @@ def evaluate_model(model_path, data_dir, results_dir='results', plot_cm=False):
         'pr_auc': float(pr_auc),
         'average_precision': float(avg_precision),
         'model_info': model_info,
-        'class_names': CLASS_NAMES
+        'class_names': CLASS_NAMES,
+        'per_class_metrics': {
+            class_name: {
+                'precision': float(cm[i][i] / cm[i].sum() if cm[i].sum() > 0 else 0),
+                'recall': float(cm[i][i] / cm[:,i].sum() if cm[:,i].sum() > 0 else 0),
+                'f1': float(2 * (cm[i][i] / cm[i].sum()) * (cm[i][i] / cm[:,i].sum()) / 
+                          ((cm[i][i] / cm[i].sum()) + (cm[i][i] / cm[:,i].sum())) 
+                          if cm[i].sum() > 0 and cm[:,i].sum() > 0 else 0)
+            }
+            for i, class_name in enumerate(CLASS_NAMES)
+        }
     }
 
     # Save with filename based on base_name
