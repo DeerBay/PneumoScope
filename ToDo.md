@@ -19,7 +19,7 @@
 ## **3. Model Development**
 - [X] Choose baseline CNN architecture (e.g., simple CNN). # Ali
 - [X] Train a binary classification model (pneumonia vs. no pneumonia).
-- [ ] Train a ternary classification model (bacterial vs. viral vs. no pneumonia). # Ali
+- [X] Train a ternary classification model (bacterial vs. viral vs. no pneumonia). # Ali
 - [X] Experiment with pre-trained models (e.g., ResNet, VGG, Inception).
 - [X] Implement transfer learning if using pre-trained models.
 
@@ -28,20 +28,20 @@
 - [X] Compute key metrics:
   - [X] Accuracy
   - [X] Precision, Recall, F1-score, Accuracy
-  - [ ] ROC-AUC # Ali
+  - [X] ROC-AUC # Ali
 - [X] Create and display confusion matrices. # Julia
 - [X] Save model performance results for comparison. # Ali
 
 ## **5. Optimization** # Sebastian
-- [X] Fine-tune hyperparameters (learning rate, batch size, number of epochs). 
-- [X] Implement early stopping and learning rate scheduling. # Early stopping check, learning rate scheduler not yet implemented
+- [ ] Fine-tune hyperparameters (learning rate, batch size, number of epochs). 
+- [ ] Implement early stopping and learning rate scheduling. # Early stopping check, learning rate scheduler not yet implemented
 - [ ] Test different optimizers (e.g., Adam, SGD).
 - [ ] Experiment with different data augmentation strategies. # Implemented but not tested
 
 ## **6. Visualization** # Julia
-- [ ] Plot training and validation loss/accuracy curves. 
-- [ ] Visualize some correctly and incorrectly classified images. 
-- [ ] Use Grad-CAM or similar techniques to interpret model predictions. 
+- [X] Plot training and validation loss/accuracy curves. 
+- [X] Visualize some correctly and incorrectly classified images. 
+- [X] Use Grad-CAM or similar techniques to interpret model predictions. 
 
 ## **7. Deployment (Optional)** # Younis
 - [ ] Convert the trained model to a format suitable for deployment (e.g., PyTorch, ONNX).
