@@ -63,7 +63,7 @@ PneumoScope/
 │
 ├── notebooks/             # Jupyter notebooks for experiments and EDA
 │   ├── data_exploration.ipynb
-│   └── model_training.ipynb
+│   └── analysis_of_models.ipynb
 │
 ├── src/                   # Source code
 │   ├── data_loader.py     # Code to load and preprocess the dataset
@@ -73,15 +73,24 @@ PneumoScope/
 │   └── utils.py           # Helper functions
 │
 ├── saved_models/          # Folder to save trained models
-│   ├── best_model.h5
-│   └── latest_model.h5
+│   ├── multiclass/
+│   │   ├── best_model.h5
+│   │   └── latest_model.h5
+│   ├── best_model_binary.h5
+│   └── latest_model_binary.h5
 │
 ├── results/               # Folder for storing results and logs
-│   ├── plots/             # Training/validation curves, confusion matrices
-│   └── logs/              # Training logs
+│   ├── multi/ .json       # Training logs multi
+│   └── .json              # Training logs binary
 │
+├── templates/             # Folder for storing templates
+│   ├── index.html         # 
+│   └── result.html        # 
+│
+├── app.py                 # Flask app to run inference on new pictures
 ├── main.py                # Main script, runs training and evaluation
 ├── requirements.txt       # List of dependencies
+├── reorganize_dataset.py  # Resizes train|val|test sizes
 ├── reorganize_dataset.py  # Resizes train|val|test sizes
 ├── README.md              # Project description and instructions
 ├── .gitignore             # Ignored files/folders
