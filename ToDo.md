@@ -34,9 +34,9 @@
 
 ## **5. Optimization** # Sebastian
 - [X] Fine-tune hyperparameters (learning rate, batch size, number of epochs). 
-- [/] Implement early stopping and learning rate scheduling. # Early stopping check, learning rate scheduler not yet implemented
-- [ ] Test different optimizers (e.g., Adam, SGD).
-- [ ] Experiment with different data augmentation strategies. # Implemented but not tested
+- [X] Implement early stopping and learning rate scheduling. # Early stopping check, learning rate scheduler not yet implemented
+- [/] Test different optimizers (e.g., Adam, SGD).
+- [X] Experiment with different data augmentation strategies. # Implemented but not tested
 
 ## **6. Visualization** # Julia
 - [X] Plot training and validation loss/accuracy curves. 
