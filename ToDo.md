@@ -33,8 +33,8 @@
 - [X] Save model performance results for comparison. # Ali
 
 ## **5. Optimization** # Sebastian
-- [ ] Fine-tune hyperparameters (learning rate, batch size, number of epochs). 
-- [ ] Implement early stopping and learning rate scheduling. # Early stopping check, learning rate scheduler not yet implemented
+- [X] Fine-tune hyperparameters (learning rate, batch size, number of epochs). 
+- [/] Implement early stopping and learning rate scheduling. # Early stopping check, learning rate scheduler not yet implemented
 - [ ] Test different optimizers (e.g., Adam, SGD).
 - [ ] Experiment with different data augmentation strategies. # Implemented but not tested
 
@@ -44,20 +44,20 @@
 - [X] Use Grad-CAM or similar techniques to interpret model predictions. 
 
 ## **7. Deployment (Optional)** # Younis
-- [ ] Convert the trained model to a format suitable for deployment (e.g., PyTorch, ONNX).
-- [ ] Create a simple web app using Flask or Streamlit for real-time predictions.
-- [ ] Test the web app with sample X-ray images.
+- [X] Convert the trained model to a format suitable for deployment (e.g., PyTorch, ONNX).
+- [X] Create a simple web app using Flask or Streamlit for real-time predictions.
+- [X] Test the web app with sample X-ray images.
 
 ## **8. Documentation** # Younis
-- [ ] Update the `README.md` file with detailed instructions on:
+- [X] Update the `README.md` file with detailed instructions on:
   - [X] Project overview
   - [X] How to set up the environment
   - [X] How to run the model
-  - [ ] Results and performance metrics # Will add more as we discuss more/ Younis
-- [ ] Add comments to the code for clarity.
-- [ ] Write a brief project report (as required by our course). # Brief overview added/Younis
+  - [X] Results and performance metrics # See analysis_of_models.ipynb
+- [X] Add comments to the code for clarity.
+- [X] Write a brief project report (as required by our course). # Brief overview added/Younis
 
 ## **9. Final Steps**
-- [ ] Review and clean the code.
-- [ ] Commit all changes and push to GitHub.
-- [ ] Share the project link with our course instructor.
+- [/] Review and clean the code.
+- [X] Commit all changes and push to GitHub.
+- [X] Share the project link with our course instructor.
