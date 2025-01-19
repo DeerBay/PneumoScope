@@ -14,3 +14,4 @@ plotly==5.24.1
 grad-cam==1.5.4
 seaborn==0.13.2
 flask==3.1.0
+torchsummary==1.5.1
